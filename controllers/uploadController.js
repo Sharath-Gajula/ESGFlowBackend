@@ -1,9 +1,6 @@
 const RawData = require("../models/RawData");
 const EmissionRecord = require("../models/EmissionRecord");
 
-const fs = require("fs");
-const path = require("path");
-
 const parseCSV = require("../services/csvParser");
 
 const normalizeRecord = require(
@@ -33,28 +30,14 @@ const processUpload = async (
       });
     }
 
-    // Convert to ABSOLUTE PATH
-    const filePath = path.resolve(
-      req.file.path
-    );
-
     console.log(
-      "Resolved File Path:",
-      filePath
+      "Processing File:",
+      req.file.originalname
     );
 
-    // Verify file exists
-    if (!fs.existsSync(filePath)) {
-      return res.status(500).json({
-        success: false,
-        message:
-          "Uploaded file not found",
-      });
-    }
-
-    // Parse CSV
+    // Parse CSV FROM BUFFER
     const rows = await parseCSV(
-      filePath
+      req.file.buffer
     );
 
     console.log(
@@ -75,8 +58,10 @@ const processUpload = async (
       (row) => ({
         sourceType,
         originalRow: row,
+
         fileName:
-          req.file.filename,
+          req.file.originalname,
+
         processingStatus:
           "uploaded",
       })
