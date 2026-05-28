@@ -1,6 +1,8 @@
 const RawData = require("../models/RawData");
 const EmissionRecord = require("../models/EmissionRecord");
+
 const fs = require("fs");
+const path = require("path");
 
 const parseCSV = require("../services/csvParser");
 
@@ -12,328 +14,184 @@ const detectSuspiciousRecord = require(
   "../services/suspiciousDetector"
 );
 
-// ============================
+// ========================================
+// COMMON UPLOAD HANDLER
+// ========================================
+
+const processUpload = async (
+  req,
+  res,
+  sourceType,
+  successMessage
+) => {
+  try {
+    // Check File
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "CSV file is required",
+      });
+    }
+
+    // Absolute File Path
+    const filePath = path.resolve(
+      req.file.path
+    );
+
+    console.log(
+      "Resolved File Path:",
+      filePath
+    );
+
+    // Verify File Exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Uploaded file not found",
+      });
+    }
+
+    // Parse CSV
+    const rows = await parseCSV(
+      filePath
+    );
+
+    // Check Empty CSV
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "CSV file is empty",
+      });
+    }
+
+    // Prepare Raw Data
+    const rawDocuments = rows.map(
+      (row) => ({
+        sourceType,
+        originalRow: row,
+        fileName:
+          req.file.filename,
+        processingStatus:
+          "uploaded",
+      })
+    );
+
+    // Store Raw Data
+    const savedRawData =
+      await RawData.insertMany(
+        rawDocuments
+      );
+
+    // Normalize + Detect Suspicious
+    const normalizedRecords =
+      savedRawData.map((doc) => {
+        // Normalize
+        const normalizedData =
+          normalizeRecord(
+            doc.sourceType,
+            doc.originalRow
+          );
+
+        // Suspicious Detection
+        const suspiciousResult =
+          detectSuspiciousRecord(
+            doc.sourceType,
+            doc.originalRow,
+            normalizedData
+          );
+
+        return {
+          rawDataId: doc._id,
+          sourceType:
+            doc.sourceType,
+          category:
+            normalizedData.category,
+          scope:
+            normalizedData.scope,
+          normalizedValue:
+            normalizedData.normalizedValue,
+          unit:
+            normalizedData.unit,
+          status:
+            suspiciousResult.status,
+          suspiciousFlags:
+            suspiciousResult.suspiciousFlags,
+          recordDate:
+            normalizedData.date,
+        };
+      });
+
+    // Store Normalized Records
+    await EmissionRecord.insertMany(
+      normalizedRecords
+    );
+
+    // Success Response
+    res.status(201).json({
+      success: true,
+      message: successMessage,
+      totalRows: rows.length,
+    });
+  } catch (error) {
+    console.error(
+      "UPLOAD ERROR:",
+      error
+    );
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// ========================================
 // SAP Upload
-// ============================
+// ========================================
 
-const uploadSAPData = async (req, res) => {
-  let filePath = null;
-  try {
-    // Check File
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "CSV file is required",
-      });
-    }
-
-    filePath = req.file.path;
-
-    // Verify file exists
-    if (!fs.existsSync(filePath)) {
-      return res.status(500).json({
-        success: false,
-        message: "File upload failed - file not found",
-      });
-    }
-
-    // Parse CSV
-    const rows = await parseCSV(filePath);
-
-    if (!rows || rows.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "CSV file is empty",
-      });
-    }
-
-    // Prepare Raw Data
-    const rawDocuments = rows.map((row) => ({
-      sourceType: "sap",
-      originalRow: row,
-      fileName: req.file.filename,
-      processingStatus: "uploaded",
-    }));
-
-    // Store Raw Data
-    const savedRawData = await RawData.insertMany(
-      rawDocuments
-    );
-
-    // Normalize + Detect Suspicious
-    const normalizedRecords = savedRawData.map((doc) => {
-      // Normalize Data
-      const normalizedData = normalizeRecord(
-        doc.sourceType,
-        doc.originalRow
-      );
-
-      // Detect Suspicious
-      const suspiciousResult =
-        detectSuspiciousRecord(
-          doc.sourceType,
-          doc.originalRow,
-          normalizedData
-        );
-
-      return {
-        rawDataId: doc._id,
-        sourceType: doc.sourceType,
-        category: normalizedData.category,
-        scope: normalizedData.scope,
-        normalizedValue: normalizedData.normalizedValue,
-        unit: normalizedData.unit,
-        status: suspiciousResult.status,
-        suspiciousFlags:
-          suspiciousResult.suspiciousFlags,
-        recordDate: normalizedData.date,
-      };
-    });
-
-    // Store Normalized Records
-    await EmissionRecord.insertMany(normalizedRecords);
-
-    // Clean up the uploaded file
-    fs.unlinkSync(filePath);
-
-    res.status(201).json({
-      success: true,
-      message: "SAP CSV uploaded successfully",
-      totalRows: rows.length,
-    });
-  } catch (error) {
-    console.error("SAP Upload Error:", error);
-
-    // Clean up file if it exists
-    if (filePath && fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch (unlinkError) {
-        console.error("Error deleting file:", unlinkError);
-      }
-    }
-
-    res.status(500).json({
-      success: false,
-      message: `SAP upload failed: ${error.message}`,
-    });
-  }
+const uploadSAPData = async (
+  req,
+  res
+) => {
+  await processUpload(
+    req,
+    res,
+    "sap",
+    "SAP CSV uploaded successfully"
+  );
 };
 
-// ============================
+// ========================================
 // Utility Upload
-// ============================
+// ========================================
 
-const uploadUtilityData = async (req, res) => {
-  let filePath = null;
-  try {
-    // Check File
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "CSV file is required",
-      });
-    }
-
-    filePath = req.file.path;
-
-    // Verify file exists
-    if (!fs.existsSync(filePath)) {
-      return res.status(500).json({
-        success: false,
-        message: "File upload failed - file not found",
-      });
-    }
-
-    // Parse CSV
-    const rows = await parseCSV(filePath);
-
-    if (!rows || rows.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "CSV file is empty",
-      });
-    }
-
-    // Prepare Raw Data
-    const rawDocuments = rows.map((row) => ({
-      sourceType: "utility",
-      originalRow: row,
-      fileName: req.file.filename,
-      processingStatus: "uploaded",
-    }));
-
-    // Store Raw Data
-    const savedRawData = await RawData.insertMany(
-      rawDocuments
-    );
-
-    // Normalize + Detect Suspicious
-    const normalizedRecords = savedRawData.map((doc) => {
-      // Normalize Data
-      const normalizedData = normalizeRecord(
-        doc.sourceType,
-        doc.originalRow
-      );
-
-      // Detect Suspicious
-      const suspiciousResult =
-        detectSuspiciousRecord(
-          doc.sourceType,
-          doc.originalRow,
-          normalizedData
-        );
-
-      return {
-        rawDataId: doc._id,
-        sourceType: doc.sourceType,
-        category: normalizedData.category,
-        scope: normalizedData.scope,
-        normalizedValue: normalizedData.normalizedValue,
-        unit: normalizedData.unit,
-        status: suspiciousResult.status,
-        suspiciousFlags:
-          suspiciousResult.suspiciousFlags,
-        recordDate: normalizedData.date,
-      };
-    });
-
-    // Store Normalized Records
-    await EmissionRecord.insertMany(normalizedRecords);
-
-    // Clean up the uploaded file
-    fs.unlinkSync(filePath);
-
-    res.status(201).json({
-      success: true,
-      message: "Utility CSV uploaded successfully",
-      totalRows: rows.length,
-    });
-  } catch (error) {
-    console.error("Utility Upload Error:", error);
-
-    // Clean up file if it exists
-    if (filePath && fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch (unlinkError) {
-        console.error("Error deleting file:", unlinkError);
-      }
-    }
-
-    res.status(500).json({
-      success: false,
-      message: `Utility upload failed: ${error.message}`,
-    });
-  }
+const uploadUtilityData = async (
+  req,
+  res
+) => {
+  await processUpload(
+    req,
+    res,
+    "utility",
+    "Utility CSV uploaded successfully"
+  );
 };
 
-// ============================
+// ========================================
 // Travel Upload
-// ============================
+// ========================================
 
-const uploadTravelData = async (req, res) => {
-  let filePath = null;
-  try {
-    // Check File
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "CSV file is required",
-      });
-    }
-
-    filePath = req.file.path;
-
-    // Verify file exists
-    if (!fs.existsSync(filePath)) {
-      return res.status(500).json({
-        success: false,
-        message: "File upload failed - file not found",
-      });
-    }
-
-    // Parse CSV
-    const rows = await parseCSV(filePath);
-
-    if (!rows || rows.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "CSV file is empty",
-      });
-    }
-
-    // Prepare Raw Data
-    const rawDocuments = rows.map((row) => ({
-      sourceType: "travel",
-      originalRow: row,
-      fileName: req.file.filename,
-      processingStatus: "uploaded",
-    }));
-
-    // Store Raw Data
-    const savedRawData = await RawData.insertMany(
-      rawDocuments
-    );
-
-    // Normalize + Detect Suspicious
-    const normalizedRecords = savedRawData.map((doc) => {
-      // Normalize Data
-      const normalizedData = normalizeRecord(
-        doc.sourceType,
-        doc.originalRow
-      );
-
-      // Detect Suspicious
-      const suspiciousResult =
-        detectSuspiciousRecord(
-          doc.sourceType,
-          doc.originalRow,
-          normalizedData
-        );
-
-      return {
-        rawDataId: doc._id,
-        sourceType: doc.sourceType,
-        category: normalizedData.category,
-        scope: normalizedData.scope,
-        normalizedValue: normalizedData.normalizedValue,
-        unit: normalizedData.unit,
-        status: suspiciousResult.status,
-        suspiciousFlags:
-          suspiciousResult.suspiciousFlags,
-        recordDate: normalizedData.date,
-      };
-    });
-
-    // Store Normalized Records
-    await EmissionRecord.insertMany(normalizedRecords);
-
-    // Clean up the uploaded file
-    fs.unlinkSync(filePath);
-
-    res.status(201).json({
-      success: true,
-      message: "Travel CSV uploaded successfully",
-      totalRows: rows.length,
-    });
-  } catch (error) {
-    console.error("Travel Upload Error:", error);
-
-    // Clean up file if it exists
-    if (filePath && fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch (unlinkError) {
-        console.error("Error deleting file:", unlinkError);
-      }
-    }
-
-    res.status(500).json({
-      success: false,
-      message: `Travel upload failed: ${error.message}`,
-    });
-  }
+const uploadTravelData = async (
+  req,
+  res
+) => {
+  await processUpload(
+    req,
+    res,
+    "travel",
+    "Travel CSV uploaded successfully"
+  );
 };
 
 module.exports = {
