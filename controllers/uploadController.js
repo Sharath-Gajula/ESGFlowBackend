@@ -15,7 +15,7 @@ const detectSuspiciousRecord = require(
 );
 
 // ========================================
-// COMMON UPLOAD HANDLER
+// COMMON CSV PROCESSOR
 // ========================================
 
 const processUpload = async (
@@ -25,7 +25,7 @@ const processUpload = async (
   successMessage
 ) => {
   try {
-    // Check File
+    // Validate File
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -33,7 +33,7 @@ const processUpload = async (
       });
     }
 
-    // Absolute File Path
+    // Convert to ABSOLUTE PATH
     const filePath = path.resolve(
       req.file.path
     );
@@ -43,7 +43,7 @@ const processUpload = async (
       filePath
     );
 
-    // Verify File Exists
+    // Verify file exists
     if (!fs.existsSync(filePath)) {
       return res.status(500).json({
         success: false,
@@ -57,7 +57,12 @@ const processUpload = async (
       filePath
     );
 
-    // Check Empty CSV
+    console.log(
+      "Parsed Rows:",
+      rows.length
+    );
+
+    // Empty CSV Check
     if (!rows || rows.length === 0) {
       return res.status(400).json({
         success: false,
@@ -65,7 +70,7 @@ const processUpload = async (
       });
     }
 
-    // Prepare Raw Data
+    // Prepare Raw Documents
     const rawDocuments = rows.map(
       (row) => ({
         sourceType,
@@ -103,26 +108,34 @@ const processUpload = async (
 
         return {
           rawDataId: doc._id,
+
           sourceType:
             doc.sourceType,
+
           category:
             normalizedData.category,
+
           scope:
             normalizedData.scope,
+
           normalizedValue:
             normalizedData.normalizedValue,
+
           unit:
             normalizedData.unit,
+
           status:
             suspiciousResult.status,
+
           suspiciousFlags:
             suspiciousResult.suspiciousFlags,
+
           recordDate:
             normalizedData.date,
         };
       });
 
-    // Store Normalized Records
+    // Store Emission Records
     await EmissionRecord.insertMany(
       normalizedRecords
     );
