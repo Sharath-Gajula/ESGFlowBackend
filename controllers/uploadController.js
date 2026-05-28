@@ -1,5 +1,6 @@
 const RawData = require("../models/RawData");
 const EmissionRecord = require("../models/EmissionRecord");
+const fs = require("fs");
 
 const parseCSV = require("../services/csvParser");
 
@@ -16,6 +17,7 @@ const detectSuspiciousRecord = require(
 // ============================
 
 const uploadSAPData = async (req, res) => {
+  let filePath = null;
   try {
     // Check File
     if (!req.file) {
@@ -25,8 +27,25 @@ const uploadSAPData = async (req, res) => {
       });
     }
 
+    filePath = req.file.path;
+
+    // Verify file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(500).json({
+        success: false,
+        message: "File upload failed - file not found",
+      });
+    }
+
     // Parse CSV
-    const rows = await parseCSV(req.file.path);
+    const rows = await parseCSV(filePath);
+
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "CSV file is empty",
+      });
+    }
 
     // Prepare Raw Data
     const rawDocuments = rows.map((row) => ({
@@ -59,15 +78,23 @@ const uploadSAPData = async (req, res) => {
 
       return {
         rawDataId: doc._id,
-        ...normalizedData,
+        sourceType: doc.sourceType,
+        category: normalizedData.category,
+        scope: normalizedData.scope,
+        normalizedValue: normalizedData.normalizedValue,
+        unit: normalizedData.unit,
         status: suspiciousResult.status,
         suspiciousFlags:
           suspiciousResult.suspiciousFlags,
+        recordDate: normalizedData.date,
       };
     });
 
     // Store Normalized Records
     await EmissionRecord.insertMany(normalizedRecords);
+
+    // Clean up the uploaded file
+    fs.unlinkSync(filePath);
 
     res.status(201).json({
       success: true,
@@ -75,11 +102,20 @@ const uploadSAPData = async (req, res) => {
       totalRows: rows.length,
     });
   } catch (error) {
-    console.log(error);
+    console.error("SAP Upload Error:", error);
+
+    // Clean up file if it exists
+    if (filePath && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (unlinkError) {
+        console.error("Error deleting file:", unlinkError);
+      }
+    }
 
     res.status(500).json({
       success: false,
-      message: "Server Error",
+      message: `SAP upload failed: ${error.message}`,
     });
   }
 };
@@ -89,6 +125,7 @@ const uploadSAPData = async (req, res) => {
 // ============================
 
 const uploadUtilityData = async (req, res) => {
+  let filePath = null;
   try {
     // Check File
     if (!req.file) {
@@ -98,8 +135,25 @@ const uploadUtilityData = async (req, res) => {
       });
     }
 
+    filePath = req.file.path;
+
+    // Verify file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(500).json({
+        success: false,
+        message: "File upload failed - file not found",
+      });
+    }
+
     // Parse CSV
-    const rows = await parseCSV(req.file.path);
+    const rows = await parseCSV(filePath);
+
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "CSV file is empty",
+      });
+    }
 
     // Prepare Raw Data
     const rawDocuments = rows.map((row) => ({
@@ -132,15 +186,23 @@ const uploadUtilityData = async (req, res) => {
 
       return {
         rawDataId: doc._id,
-        ...normalizedData,
+        sourceType: doc.sourceType,
+        category: normalizedData.category,
+        scope: normalizedData.scope,
+        normalizedValue: normalizedData.normalizedValue,
+        unit: normalizedData.unit,
         status: suspiciousResult.status,
         suspiciousFlags:
           suspiciousResult.suspiciousFlags,
+        recordDate: normalizedData.date,
       };
     });
 
     // Store Normalized Records
     await EmissionRecord.insertMany(normalizedRecords);
+
+    // Clean up the uploaded file
+    fs.unlinkSync(filePath);
 
     res.status(201).json({
       success: true,
@@ -148,11 +210,20 @@ const uploadUtilityData = async (req, res) => {
       totalRows: rows.length,
     });
   } catch (error) {
-    console.log(error);
+    console.error("Utility Upload Error:", error);
+
+    // Clean up file if it exists
+    if (filePath && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (unlinkError) {
+        console.error("Error deleting file:", unlinkError);
+      }
+    }
 
     res.status(500).json({
       success: false,
-      message: "Server Error",
+      message: `Utility upload failed: ${error.message}`,
     });
   }
 };
@@ -162,6 +233,7 @@ const uploadUtilityData = async (req, res) => {
 // ============================
 
 const uploadTravelData = async (req, res) => {
+  let filePath = null;
   try {
     // Check File
     if (!req.file) {
@@ -171,8 +243,25 @@ const uploadTravelData = async (req, res) => {
       });
     }
 
+    filePath = req.file.path;
+
+    // Verify file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(500).json({
+        success: false,
+        message: "File upload failed - file not found",
+      });
+    }
+
     // Parse CSV
-    const rows = await parseCSV(req.file.path);
+    const rows = await parseCSV(filePath);
+
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "CSV file is empty",
+      });
+    }
 
     // Prepare Raw Data
     const rawDocuments = rows.map((row) => ({
@@ -205,15 +294,23 @@ const uploadTravelData = async (req, res) => {
 
       return {
         rawDataId: doc._id,
-        ...normalizedData,
+        sourceType: doc.sourceType,
+        category: normalizedData.category,
+        scope: normalizedData.scope,
+        normalizedValue: normalizedData.normalizedValue,
+        unit: normalizedData.unit,
         status: suspiciousResult.status,
         suspiciousFlags:
           suspiciousResult.suspiciousFlags,
+        recordDate: normalizedData.date,
       };
     });
 
     // Store Normalized Records
     await EmissionRecord.insertMany(normalizedRecords);
+
+    // Clean up the uploaded file
+    fs.unlinkSync(filePath);
 
     res.status(201).json({
       success: true,
@@ -221,11 +318,20 @@ const uploadTravelData = async (req, res) => {
       totalRows: rows.length,
     });
   } catch (error) {
-    console.log(error);
+    console.error("Travel Upload Error:", error);
+
+    // Clean up file if it exists
+    if (filePath && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (unlinkError) {
+        console.error("Error deleting file:", unlinkError);
+      }
+    }
 
     res.status(500).json({
       success: false,
-      message: "Server Error",
+      message: `Travel upload failed: ${error.message}`,
     });
   }
 };
